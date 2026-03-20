@@ -1,0 +1,2 @@
+# Physics-Informed Neural Networks (PINNs)
+This repository contains implementations of Physics-Informed Neural Networks (PINNs) for solving differential equations. It functions as a first personal test and exploration of the concept for me.
