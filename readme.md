@@ -15,7 +15,9 @@ Physics-Informed Neural Networks (PINNs) are a class of neural networks that inc
 My first implementation is a PINN for solving the pendulum. First, I generate some data by solving the pendulum equation using a numerical method, pick $20$ random points from the generated data, and add some noise to it to simulate real-world sensor data. Then, I train a neural network to learn the underlying physics of the pendulum motion by minimizing the loss function that includes both the data fitting and the residual of the pendulum equation. 
 
 ![PINN for Pendulum](pendulum_animation_with_physical_loss.gif)
+
 We can see that the PINN is able to learn the underlying physics of the pendulum motion and can predict the future states of the pendulum accurately, even with noisy data. If we remove the physical loss from the training process, the neural network struggles to learn the correct dynamics of the pendulum, resulting in overfitting to the noisy data.
 
 ![PINN for Pendulum without Physical Loss](pendulum_animation_without_physical_loss.gif)
+
 This demonstrates the importance of incorporating physical laws into the training process of neural networks, especially when dealing with noisy data or limited data. 
