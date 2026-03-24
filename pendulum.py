@@ -5,6 +5,7 @@ from matplotlib.animation import FuncAnimation
 import torch.nn as nn
 import torch
 from progress.bar import Bar
+from torch.utils.tensorboard import SummaryWriter
 
 class PendulumMLP(nn.Module):
     def __init__(self):
@@ -15,6 +16,7 @@ class PendulumMLP(nn.Module):
         self.hidden_layer_3 = nn.Linear(32, 32)
         self.output_layer = nn.Linear(32, 1)  # Output is the angle
         self.activation = nn.SiLU()  # Using SiLU activation function
+        self.L = nn.Parameter(torch.tensor(0.5), requires_grad=True)  # Learnable length of the pendulum
     
     def forward(self, x):
         h1 = self.activation(self.input_layer(x))
@@ -24,10 +26,11 @@ class PendulumMLP(nn.Module):
         output = self.output_layer(h4)
         return output
     
-def train_model(model, t, true_angles, t_physics, t_eval, num_epochs=1000, learning_rate=0.001, lambda_physical = 0.1):
+def train_model(model, t, true_angles, t_physics, t_eval, num_epochs=1000, learning_rate=0.001, lambda_physical = 0.1, writer=None):
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     loss_fn = nn.MSELoss()
     loss_history = np.zeros(num_epochs)
+    L_history = np.zeros(num_epochs)
     
     with Bar('Training', max=num_epochs) as bar:
         for epoch in range(num_epochs):
@@ -55,7 +58,7 @@ def train_model(model, t, true_angles, t_physics, t_eval, num_epochs=1000, learn
                 retain_graph=True
             )[0]
             # Calculate the physical loss based on the pendulum equation
-            physical_residual = domega_dt + (9.81 / 1.0) * torch.sin(predicted_physics)
+            physical_residual = domega_dt + (9.81 / model.L) * torch.sin(predicted_physics)
             physical_loss = torch.mean(physical_residual ** 2)
             # Total loss is a combination of MSE loss and physical loss
             total_loss = mse_loss + lambda_physical * physical_loss
@@ -68,13 +71,20 @@ def train_model(model, t, true_angles, t_physics, t_eval, num_epochs=1000, learn
             # if epoch % 1000 == 0:
             #     print(f"Epoch {epoch}, Total Loss: {total_loss.item():.4f}, MSE Loss: {mse_loss.item():.4f}, Physical Loss: {physical_loss.item():.4f}")
             loss_history[epoch] = total_loss.item()
+            L_history[epoch] = model.L.item()
+
+            if writer is not None:
+                writer.add_scalar('Loss/Total', total_loss.item(), epoch)
+                writer.add_scalar('Loss/MSE', mse_loss.item(), epoch)
+                writer.add_scalar('Loss/Physics', physical_loss.item(), epoch)
+                writer.add_scalar('Model/L', model.L.item(), epoch)
             
             # Eval and save the predicted angles for plotting every 200 epochs
             if epoch % 200 == 0:
                 model.eval()
                 with torch.no_grad():
                     predicted_angles_eval = model(t_eval).squeeze().numpy()
-                    path = f"saves_without_physical_loss/pendulum_epoch_{epoch}.npy"
+                    path = f"saves_inverse/pendulum_epoch_{epoch}.npy"
                     np.save(path, predicted_angles_eval)
                     # print(f"Saved predicted angles at epoch {epoch} to {path}")
             
@@ -86,10 +96,10 @@ def train_model(model, t, true_angles, t_physics, t_eval, num_epochs=1000, learn
     model.eval()
     with torch.no_grad():
         predicted_angles_eval = model(t_eval).squeeze().numpy()
-        np.save(f"saves_without_physical_loss/pendulum_epoch_{num_epochs}.npy", predicted_angles_eval)
+        np.save(f"saves_inverse/pendulum_epoch_{num_epochs}.npy", predicted_angles_eval)
         # print("Saved final predicted angles to saves/pendulum_final.npy")
 
-    return loss_history
+    return loss_history, L_history
 
     
 if __name__ == "__main__":
@@ -100,9 +110,9 @@ if __name__ == "__main__":
     omega0 = 0.0        # Initial angular velocity
     t_span = (0, 10)    # Time span for the simulation
     t_eval = np.linspace(t_span[0], t_span[1], 10000)  # Time points to evaluate
-    seed = 42
-    np.random.seed(seed)
-    torch.manual_seed(seed)
+    # seed = 42
+    # np.random.seed(seed)
+    # torch.manual_seed(seed)
     
     # Define the pendulum dynamics
     def pendulum_dynamics(t, y):
@@ -116,7 +126,7 @@ if __name__ == "__main__":
     true_angles = sol.y[0]  # Extract the angles from the solution
     
     # Pick a subset of the data for training
-    n_samples = 20
+    n_samples = 50
     indices = np.random.choice(len(t_eval), n_samples, replace=False)
     t_train = torch.tensor(t_eval[indices], dtype=torch.float32).unsqueeze(1)  # Used for the MSE loss, shape (n_samples, 1)
     true_angles_train = torch.tensor(true_angles[indices], dtype=torch.float32).unsqueeze(1)  # Used for the MSE loss, shape (n_samples, 1)
@@ -124,13 +134,15 @@ if __name__ == "__main__":
     t_eval_tensor = torch.tensor(t_eval, dtype=torch.float32).unsqueeze(1)  # Used for evaluation, shape (10000, 1)
     
     # Add some noise to the training data to make it more realistic
-    noise_std = 0.05
+    noise_std = 0.1
     true_angles_train += noise_std * torch.randn_like(true_angles_train)
     
     # Initialize the model and train it
-    num_epochs = 6000
+    num_epochs = 10000
     model = PendulumMLP()
-    loss_history = train_model(model, t_train, true_angles_train, t_physics, t_eval_tensor, num_epochs=num_epochs, learning_rate=0.001, lambda_physical=0)
+    writer = SummaryWriter(log_dir='runs/pendulum_inverse')
+    loss_history, L_history = train_model(model, t_train, true_angles_train, t_physics, t_eval_tensor, num_epochs=num_epochs, learning_rate=0.001, lambda_physical=0.1, writer=writer)
+    writer.close()
     
     # Plot the loss history
     fig, ax = plt.subplots()
@@ -141,6 +153,16 @@ if __name__ == "__main__":
     ax.legend()
     ax.grid(zorder=0)
     ax.set_xlim(0, len(loss_history))
+    
+    # Plot the learned length of the pendulum over time
+    fig3, ax3 = plt.subplots()
+    ax3.plot(L_history, label='Learned Length L', color='blue')
+    ax3.axhline(y=L, color='black', linestyle='dashed', label='True Length L', zorder=0)
+    ax3.set_xlabel('Epoch')
+    ax3.set_ylabel('Length')
+    ax3.set_title('Learned Length Over Time')
+    ax3.legend()
+    ax3.grid(zorder=0)
     
     # Create an animation of the predicted angles over time
     fig2, ax2 = plt.subplots()
@@ -156,11 +178,11 @@ if __name__ == "__main__":
     ax2.grid(zorder=0)
     
     def update(frame):
-        predicted_angles = np.load(f"saves_without_physical_loss/pendulum_epoch_{frame}.npy")
+        predicted_angles = np.load(f"saves_inverse/pendulum_epoch_{frame}.npy")
         line.set_data(t_eval, predicted_angles)
         return line,
     
     anim = FuncAnimation(fig2, update, frames=range(0, num_epochs + 1, 200), blit=True)
-    anim.save('pendulum_animation_without_physical_loss.gif', writer='pillow', fps=5)
+    anim.save('pendulum_animation_inverse.gif', writer='pillow', fps=5)
     plt.show()
     
