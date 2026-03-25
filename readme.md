@@ -5,7 +5,8 @@ This repository contains implementations of Physics-Informed Neural Networks (PI
 - [x] Get a basic understanding of PINNs and their applications.
 - [x] Implement a simple PINN to solve a basic differential equation.
 - [x] Implement an inverse problem using PINNs to learn unknown parameters from data.
-- [ ] Explore more complex problems and applications of PINNs in the future (PDEs, fluid dynamics, etc.).
+- [ ] Explore more complex problems and applications of PINNs in the future (double pendulum, PDEs, fluid dynamics, etc.).
+- [ ] Learn about and implement SINDy (Sparse Identification of Nonlinear Dynamical Systems) for discovering governing equations from data.
 
 
 ## PINNs Overview
