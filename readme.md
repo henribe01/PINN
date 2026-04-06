@@ -7,6 +7,7 @@ This repository contains implementations of Physics-Informed Neural Networks (PI
 - [x] Implement an inverse problem using PINNs to learn unknown parameters from data.
 - [ ] Explore more complex problems and applications of PINNs in the future (double pendulum, PDEs, fluid dynamics, etc.).
 - [ ] Learn about and implement SINDy (Sparse Identification of Nonlinear Dynamical Systems) for discovering governing equations from data.
+- [ ] Implement a 2D Navier-Stokes solver using PINNs to simulate fluid flow.
 
 
 ## PINNs Overview
@@ -25,3 +26,6 @@ We can see that the PINN is able to learn the underlying physics of the pendulum
 ![PINN for Pendulum without Physical Loss](pendulum_animation_without_physical_loss.gif)
 
 This demonstrates the importance of incorporating physical laws into the training process of neural networks, especially when dealing with noisy data or limited data. 
+
+## Sources
+- [Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear partial differential equations](https://www.sciencedirect.com/science/article/pii/S0021999118307125)
