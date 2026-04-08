@@ -39,8 +39,8 @@ class BurgersNN(nn.Module):
         return torch.exp(self.log_nu) # Ensure positivity of viscosity
     
     def pde_residual(self, x, t):
-        x = x.requires_grad_(True)
-        t = t.requires_grad_(True)
+        x = x.clone().requires_grad_(True)
+        t = t.clone().requires_grad_(True)
         u = self.forward(x, t)
         
         u_t = torch.autograd.grad(u, t, grad_outputs=torch.ones_like(u), create_graph=True)[0]
@@ -51,45 +51,62 @@ class BurgersNN(nn.Module):
         return residual
     
     def total_loss(self, data):
-        # Initial condition loss
         u_pred_ic = self.forward(data['x_ic'], data['t_ic'])
         loss_ic = torch.mean((u_pred_ic - data['u_ic'])**2)
-        
-        # Boundary condition loss
+
         u_pred_bc = self.forward(data['x_bc'], data['t_bc'])
         loss_bc = torch.mean((u_pred_bc - data['u_bc'])**2)
-        
-        # PDE residual loss
+
         res = self.pde_residual(data['x_col'], data['t_col'])
         loss_pde = torch.mean(res**2)
-        
-        # Observation loss
+
         u_pred_obs = self.forward(data['x_obs'], data['t_obs'])
         loss_obs = torch.mean((u_pred_obs - data['u_obs'])**2)
-        
-        self.history['physics_loss'].append(loss_pde.item())
-        self.history['data_loss'].append(loss_ic.item() + loss_bc.item() + loss_obs.item())
-        
-        return loss_ic + loss_bc + loss_pde + loss_obs
+
+        # Don't log here — let the training loop handle it
+        return {
+            'total': loss_ic + loss_bc + loss_pde + loss_obs,
+            'pde':   loss_pde,
+            'data':  loss_ic + loss_bc + loss_obs
+        }
     
-    def train_model(self, data, num_epochs=5000, learning_rate=0.001):
-        optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
-        
+    def train_model(self, data, num_epochs=10000, learning_rate=0.001):
+        # Phase 1: Train with Adam optimizer
+        optimizer_adam = torch.optim.Adam(self.parameters(), lr=learning_rate)
         with Bar('Training', max=num_epochs) as bar:
             for epoch in range(num_epochs):
-                optimizer.zero_grad()
-                loss = self.total_loss(data)
-                loss.backward()
-                optimizer.step()
-                
-                # if epoch % 500 == 0:
-                #     print(f'Epoch {epoch}, Loss: {loss.item():.6f}, Nu: {self.nu.item():.6f}')
-                if epoch % 10 == 0:
-                    self.history['loss'].append(loss.item())
-                    self.history['nu'].append(self.nu.item())
-                    
-                bar.next()
+                optimizer_adam.zero_grad()
+                losses = self.total_loss(data)
+                losses['total'].backward()
+                optimizer_adam.step()
 
+                if epoch % 10 == 0:
+                    self.history['loss'].append(losses['total'].item())
+                    self.history['physics_loss'].append(losses['pde'].item())
+                    self.history['data_loss'].append(losses['data'].item())
+                    self.history['nu'].append(self.nu.item())
+                bar.next()
+                
+        # Phase 2: Fine-tune with LBFGS optimizer
+        optimizer_lbfgs = torch.optim.LBFGS(self.parameters(), max_iter=50000, tolerance_grad=1e-9, line_search_fn='strong_wolfe')
+        step_counter = [0]
+        def closure():
+            optimizer_lbfgs.zero_grad()
+            losses = self.total_loss(data)
+            losses['total'].backward()
+            closure.last_losses = {k: v.item() for k, v in losses.items()}
+            return losses['total']
+
+        with Bar('Fine-tuning', max=500) as bar:
+            for _ in range(500):
+                optimizer_lbfgs.step(closure)
+                step_counter[0] += 1
+                if step_counter[0] % 10 == 0:
+                    self.history['loss'].append(closure.last_losses['total'])
+                    self.history['physics_loss'].append(closure.last_losses['pde'])
+                    self.history['data_loss'].append(closure.last_losses['data'])
+                    self.history['nu'].append(self.nu.item())
+                bar.next()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
@@ -140,7 +157,7 @@ data_torch = {
 # ==== 2. Model Training ====
 model = BurgersNN(nu_init=0.1).to(device)
 model.to(device)
-model.train_model(data_torch, num_epochs=20000, learning_rate=0.001)
+model.train_model(data_torch, num_epochs=10000, learning_rate=0.001)
 
 # ==== 3. Visualization ====
 # Plot training history
@@ -159,9 +176,10 @@ ax2.set_title('Learned Viscosity Nu')
 ax2.set_xlabel('Epochs')
 ax2.set_ylabel(r'$\nu$')
 ax2.grid()
-ax2.axhline(y=0.01, color='black', linestyle='dashed', label='True Nu')
+ax2.axhline(y=0.01/np.pi, color='black', linestyle='dashed', label=f'True $\\nu$ = {0.01/np.pi:.5f}')
 ax2.legend()
 ax2.set_xlim(0, len(model.history['nu']))
+fig.savefig('training_history.png')
 plt.tight_layout()
 
 
@@ -184,6 +202,6 @@ def update(frame):
     true_line.set_data(x, usol[:, frame])
     pred_line.set_data(x, u_pred_grid[frame, :])
     return true_line, pred_line
-ani = FuncAnimation(fig, update, frames=len(t), blit=True, interval=100)
-# ani.save('burgers_solution_animation.gif', writer='pillow', fps=10)
+ani = FuncAnimation(fig, update, frames=len(t), blit=True, interval=1000/30)
+ani.save('burgers_solution_animation.gif', writer='pillow', fps=30)
 plt.show()
