@@ -25,6 +25,9 @@ The implementation consists of the following steps:
 
 ## Results
 The PINN is able to learn the underlying physics of Burgers' equation and can predict the solution accurately, even with noisy data. The learned viscosity $\nu$ is also close to the true value, demonstrating the effectiveness of PINNs in solving inverse problems.
+
 ![PINN for Burgers' Equation](burgers_solution_animation.gif)
+
 The following plot shows the training loss over iterations and the evolution of $\nu$ during training:
+
 ![Training Loss and Viscosity Evolution](training_history.png)
