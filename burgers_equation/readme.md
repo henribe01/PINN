@@ -3,12 +3,18 @@ This folder contains an implementation of a Physics-Informed Neural Network (PIN
 
 ## Burgers' Equation
 Burgers' equation is given by:
+
 $$u_t + u u_x = \nu u_{xx}$$
+
 where $u$ is the velocity field, $t$ is time, $x$ is the spatial coordinate, and $\nu$ is the viscosity. This equation models various physical phenomena, including shock waves and turbulence. 
 The initial conditions are given by the Dirichlet boundary conditions:
+
 $$u(0, t) = u(1, t) = 0$$
+
 and the initial condition:
+
 $$u(x, 0) = -\sin(\pi x)$$
+
 The domain for $x$ is $[-1, 1]$ and for $t$ is $[0, 1]$. The viscosity $\nu$ is set to $0.01 / \pi$, which we will later try to learn from the data.
 
 ## Implementation
